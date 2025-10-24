@@ -44,7 +44,7 @@ public class Main {
             MediaFacade facade = new MediaFacade(decoratedHW);
             MediaPlayer player = new MediaPlayer(facade);
 
-            // ---- DEMO PHASES ----
+            //---- DEMO PHASES ----
 
             //DEMO A) Play the full playlist with watermark+subtitle (hardware)
             System.out.println("\n=== Demo A: Playlist with watermark+subtitle (Hardware) ===");
