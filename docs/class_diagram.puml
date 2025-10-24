@@ -1,0 +1,246 @@
+@startuml name
+title Modular Media Suite – Class Diagram (with optional SQL persistence)
+
+skinparam packageStyle rectangle
+skinparam linetype ortho
+hide circle
+hide empty members
+
+' =======================
+' PACKAGES
+' =======================
+package playback {
+  interface Playable {
+    +id() : String
+    +title() : String
+    +play(ctx: MediaPlayerContext)
+  }
+
+  class MediaFile implements Playable {
+    -id: String
+    -title: String
+    -source: source.MediaSource
+    +id(): String
+    +title(): String
+    +play(ctx: MediaPlayerContext)
+  }
+
+  class Playlist implements Playable {
+    -id: String
+    -title: String
+    -children: List<Playable>
+    +add(p: Playable)
+    +remove(p: Playable)
+    +id(): String
+    +title(): String
+    +play(ctx: MediaPlayerContext)
+  }
+
+  class MediaPlayerContext {
+    -renderer: plugin.MediaRenderer
+    +getRenderer(): plugin.MediaRenderer
+    +setRenderer(r: plugin.MediaRenderer)
+  }
+}
+
+package source {
+  interface MediaSource {
+    +openStream() : Closeable
+    +describe() : String
+  }
+
+  class LocalFileSource implements MediaSource {
+    -path: String
+    +openStream(): Closeable
+    +describe(): String
+  }
+
+  class HlsSource implements MediaSource {
+    -playlistUrl: String
+    +openStream(): Closeable
+    +describe(): String
+  }
+
+  class RemoteApiSource implements MediaSource {
+    -endpoint: String
+    +openStream(): Closeable
+    +describe(): String
+  }
+
+  package adapters {
+    class LegacySourceAdapter implements MediaSource {
+      -legacy: Object
+      +openStream(): Closeable
+      +describe(): String
+    }
+  }
+
+  package proxy {
+    class StreamProxy implements MediaSource {
+      -upstream: MediaSource
+      -cacheKey: String
+      -cache: Map<String,String> <static>
+      +openStream(): Closeable
+      +describe(): String
+      +clearCache() <static>
+    }
+  }
+}
+
+package plugin {
+  interface MediaRenderer {
+    +render(stream: Closeable, title: String)
+    +getName() : String
+  }
+
+  class HardwareRenderer implements MediaRenderer
+  class SoftwareRenderer implements MediaRenderer
+
+  interface Plugin {
+    +name(): String
+  }
+
+  package base {
+    abstract class RendererDecorator implements MediaRenderer {
+      #wrapped: MediaRenderer
+      +getName(): String
+    }
+  }
+
+  class WatermarkDecorator extends base.RendererDecorator implements Plugin
+  class SubtitleDecorator  extends base.RendererDecorator implements Plugin
+  class EqualizerDecorator extends base.RendererDecorator implements Plugin
+}
+
+package facade {
+  class MediaFacade {
+    -context: playback.MediaPlayerContext
+    +setRenderer(r: plugin.MediaRenderer)
+    +getContext(): playback.MediaPlayerContext
+    +play(item: playback.Playable)
+  }
+}
+
+package app {
+  class MediaPlayer {
+    -facade: facade.MediaFacade
+    +play(item: playback.Playable)
+    +setRenderer(r: plugin.MediaRenderer)
+  }
+  class Main <<utility>>
+}
+
+' =======================
+' OPTIONAL PERSISTENCE LAYER (Relational)
+' =======================
+package persistence <<Frame>> {
+  class MediaItemEntity <<entity>> {
+    +id: UUID
+    +title: String
+    +type: String  ' "FILE" | "PLAYLIST"
+    +source_id: UUID [0..1] ' null for Playlist
+  }
+
+  class MediaSourceEntity <<entity>> {
+    +id: UUID
+    +kind: String  ' "LOCAL" | "HLS" | "API" | "LEGACY" | "PROXY"
+    +path: String  ' file path / URL / endpoint
+    +upstream_source_id: UUID [0..1] ' for proxies
+  }
+
+  class PlaylistEntry <<entity>> {
+    +playlist_id: UUID
+    +playable_id: UUID
+    +position: int
+  }
+
+  interface MediaRepository <<repository>> {
+    +findById(id: UUID): MediaItemEntity
+    +save(item: MediaItemEntity)
+  }
+
+  interface SourceRepository <<repository>> {
+    +findById(id: UUID): MediaSourceEntity
+    +save(src: MediaSourceEntity)
+  }
+
+  interface PlaylistRepository <<repository>> {
+    +entriesFor(playlistId: UUID): List<PlaylistEntry>
+    +saveEntry(e: PlaylistEntry)
+  }
+}
+
+' =======================
+' RELATIONSHIPS (Core)
+' =======================
+playback.Playable <|.. playback.MediaFile
+playback.Playable <|.. playback.Playlist
+playback.Playlist *-- "0..*" playback.Playable : children
+
+playback.MediaFile ..> source.MediaSource : uses
+playback.MediaPlayerContext o-- plugin.MediaRenderer
+
+plugin.MediaRenderer <|.. plugin.HardwareRenderer
+plugin.MediaRenderer <|.. plugin.SoftwareRenderer
+plugin.MediaRenderer <|.. plugin.base.RendererDecorator
+plugin.base.RendererDecorator <|-- plugin.WatermarkDecorator
+plugin.base.RendererDecorator <|-- plugin.SubtitleDecorator
+plugin.base.RendererDecorator <|-- plugin.EqualizerDecorator
+
+source.MediaSource <|.. source.LocalFileSource
+source.MediaSource <|.. source.HlsSource
+source.MediaSource <|.. source.RemoteApiSource
+source.MediaSource <|.. source.adapters.LegacySourceAdapter
+source.MediaSource <|.. source.proxy.StreamProxy
+source.proxy.StreamProxy o-- source.MediaSource : upstream
+
+facade.MediaFacade ..> playback.Playable
+facade.MediaFacade o-- playback.MediaPlayerContext
+app.MediaPlayer o-- facade.MediaFacade
+app.Main ..> app.MediaPlayer
+
+' =======================
+' RELATIONSHIPS (Domain ↔ Persistence Mapping)
+' =======================
+persistence.MediaItemEntity "1" <-- "0..1" playback.MediaFile : maps from
+persistence.MediaItemEntity "1" <-- "0..1" playback.Playlist  : maps from
+persistence.MediaSourceEntity "1" <-- "0..1" source.MediaSource : maps from
+persistence.PlaylistEntry "0..*" --> "1" persistence.MediaItemEntity : playable
+persistence.PlaylistEntry "0..*" --> "1" persistence.MediaItemEntity : playlist
+
+note right of plugin.base.RendererDecorator
+<<Decorator>>
+Adds cross-cutting behavior
+around MediaRenderer.render()
+end note
+
+note right of source.proxy.StreamProxy
+<<Proxy>>
+Caches / mediates access
+to an expensive MediaSource
+end note
+
+note right of playback.Playlist
+<<Composite>>
+Uniformly treats files and
+sub-playlists as Playable
+end note
+
+note right of plugin.HardwareRenderer
+and plugin.SoftwareRenderer
+<<Bridge>>
+Swappable rendering strategy
+end note
+
+note right of source.adapters.LegacySourceAdapter
+<<Adapter>>
+Wraps legacy source API
+end note
+
+note right of facade.MediaFacade
+<<Facade>>
+Simplifies orchestration
+for clients / demos
+end note
+
+@enduml
