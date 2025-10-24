@@ -1,0 +1,19 @@
+@startuml
+participant Client
+participant WatermarkDecorator
+participant SubtitleDecorator
+participant HardwareRenderer
+
+Client -> WatermarkDecorator : render(stream, title)
+activate WatermarkDecorator
+WatermarkDecorator -> SubtitleDecorator : render(stream, title)
+activate SubtitleDecorator
+SubtitleDecorator -> HardwareRenderer : render(stream, title)
+activate HardwareRenderer
+HardwareRenderer --> SubtitleDecorator : done rendering
+deactivate HardwareRenderer
+SubtitleDecorator --> WatermarkDecorator : subtitles added
+deactivate SubtitleDecorator
+WatermarkDecorator --> Client : watermark added
+deactivate WatermarkDecorator
+@enduml
