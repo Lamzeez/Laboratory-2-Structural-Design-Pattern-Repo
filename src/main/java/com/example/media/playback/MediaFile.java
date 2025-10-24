@@ -3,7 +3,6 @@ package com.example.media.playback;
 import java.io.IOException;
 
 import com.example.media.source.MediaSource;
-// import com.example.media.plugin.MediaRenderer;
 
 public class MediaFile implements Playable {
     private final String id;
