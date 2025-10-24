@@ -36,6 +36,6 @@ public class StreamProxy implements MediaSource {
     @Override
     public String describe() { return "proxy(" + upstream.describe() + ")"; }
 
-    // helper to clear cache for tests
+    //helper to clear cache for tests
     public static void clearCache() { cache.clear(); }
 }
